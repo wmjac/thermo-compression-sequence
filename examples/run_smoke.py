@@ -2,10 +2,21 @@
 """Small CPU integration check using explicitly synthetic JSON data."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import numpy as np
+
+
+def use_source_checkout():
+    """Make this checkout importable here and in the workflow subprocesses."""
+    source = Path(__file__).resolve().parents[1] / "src"
+    if not (source / "mixture_models" / "__init__.py").is_file():
+        raise SystemExit("Place this script in the project's examples/ directory, next to ../src/.")
+    sys.path.insert(0, str(source))
+    inherited = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = str(source) + (os.pathsep + inherited if inherited else "")
 
 
 def invoke(command, options):
@@ -16,6 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="smoke-output")
     args = parser.parse_args()
+    use_source_checkout()
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
