@@ -54,11 +54,52 @@ def plot_pressure_evaluation(target, prediction, ctot, output):
 
 
 def plot_dimension_losses(summary, path):
-    ordered = sorted(summary, key=lambda item: item["dimension"])
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot([item["dimension"] for item in ordered], [item["ensemble"]["pressure_loss"] for item in ordered], marker="o")
-    ax.set(xlabel="Latent dimension d", ylabel="Dimensionless pressure loss")
-    finish(fig, path)
+    """Save linear loss, log loss, and log normalized RMSE versus dimension."""
+    _plot_dimension_series({None: summary}, path)
+
+
+def plot_dimension_comparison(summaries, path):
+    """Plot named series, e.g. validation and test, in the same three formats."""
+    _plot_dimension_series(summaries, path)
+
+
+def _plot_dimension_series(summaries, path):
+    path = Path(path)
+    series = []
+    for label, summary in summaries.items():
+        ordered = sorted(summary, key=lambda item: item["dimension"])
+        dimensions = np.asarray([item["dimension"] for item in ordered])
+        losses = np.asarray([item["ensemble"]["pressure_loss"] for item in ordered], dtype=np.float64)
+        if not len(losses) or np.any(~np.isfinite(losses)) or np.any(losses < 0):
+            raise ValueError("Dimension plots require nonempty, finite, nonnegative pressure losses.")
+        series.append((label, dimensions, losses))
+    if not series:
+        raise ValueError("Dimension plots require at least one series.")
+    rmse_stem = "rmse" + path.stem[4:] if path.stem.startswith("loss") else path.stem + "_rmse"
+    formats = ((False, False, path),
+               (False, True, path.with_name(path.stem + "_log" + path.suffix)),
+               (True, True, path.with_name(rmse_stem + "_log" + path.suffix)))
+    for rmse, logarithmic, output in formats:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        for label, dimensions, losses in series:
+            values = np.sqrt(losses) if rmse else losses
+            # Zero cannot appear on a log axis. Mask it without imposing a floor
+            # or modifying archived values; masked points also break line segments.
+            if logarithmic:
+                values = np.ma.masked_less_equal(values, 0)
+            ax.plot(dimensions, values, marker="o", label=label)
+        if logarithmic:
+            ax.set_yscale("log")
+            if not any(np.any(losses > 0) for _, _, losses in series):
+                ax.set_ylim(1, 10)
+            if any(np.any(losses == 0) for _, _, losses in series):
+                ax.text(0.02, 0.98, "Zero values omitted on log scale", transform=ax.transAxes,
+                        ha="left", va="top", fontsize="small")
+        ax.set(xlabel="Latent dimension d",
+               ylabel="Dimensionless pressure RMSE" if rmse else "Dimensionless pressure loss")
+        if any(label is not None for label, _, _ in series):
+            ax.legend()
+        finish(fig, output)
 
 
 def plot_canonical_diagnostics(convergence, aligned, output):
